@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高雄市五日天氣預報</title>
+<style>
+  :root {
+    --bg: #eef2f7;
+    --panel: #ffffff;
+    --panel-2: #f5f7fb;
+    --text: #1c1e21;
+    --sub: #6b7280;
+    --line: #e3e7ee;
+    --hot: #ef6c2f;
+    --cold: #2f7ef0;
+    --rain: #3b82f6;
+    --rain-bg: #dbe7ff;
+    --err: #dc2626;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --shadow: 0 10px 28px rgba(0, 0, 0, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1f2227;
+      --panel-2: #272b32;
+      --text: #f1f3f5;
+      --sub: #9aa1ad;
+      --line: #343944;
+      --hot: #ff8a4c;
+      --cold: #6aa6ff;
+      --rain: #5b95f8;
+      --rain-bg: #27385f;
+      --err: #f87171;
+      --accent: #3b82f6;
+      --accent-hover: #5b95f8;
+      --shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    padding: 20px 14px 40px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 1.5rem; margin: 0; }
+  .subtitle { color: var(--sub); font-size: 0.88rem; margin-top: 4px; }
+  button.refresh {
+    font: inherit;
+    font-size: 0.95rem;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.06s;
+  }
+  button.refresh:hover { background: var(--accent-hover); }
+  button.refresh:active { transform: scale(0.96); }
+  button.refresh:disabled { opacity: 0.6; cursor: default; }
+  button.refresh:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .card {
+    background: var(--panel);
+    border-radius: 20px;
+    padding: 18px;
+    box-shadow: var(--shadow);
+    margin-bottom: 16px;
+  }
+  .now {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .now-main { display: flex; align-items: center; gap: 14px; }
+  .now-icon { font-size: 3.4rem; line-height: 1; }
+  .now-temp { font-size: 2.8rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .now-desc { color: var(--sub); font-size: 0.95rem; margin-top: 2px; }
+  .now-side { text-align: right; font-size: 0.95rem; line-height: 1.8; }
+  .now-side b { font-variant-numeric: tabular-nums; }
+
+  .section-title { font-size: 1.05rem; font-weight: 600; margin: 0 0 12px; }
+  .chart-wrap { width: 100%; overflow-x: auto; }
+  svg.chart { width: 100%; height: auto; min-width: 440px; display: block; }
+  svg.chart text { fill: var(--sub); font-size: 12px; }
+  svg.chart text.val-hot { fill: var(--hot); font-weight: 600; }
+  svg.chart text.val-cold { fill: var(--cold); font-weight: 600; }
+  svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+  svg.chart .line-hot { stroke: var(--hot); fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .line-cold { stroke: var(--cold); fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .dot-hot { fill: var(--hot); }
+  svg.chart .dot-cold { fill: var(--cold); }
+  .legend { display: flex; gap: 16px; font-size: 0.82rem; color: var(--sub); margin-top: 8px; }
+  .legend span::before {
+    content: "";
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+  .legend .h::before { background: var(--hot); }
+  .legend .l::before { background: var(--cold); }
+
+  .days {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 720px) {
+    .days { grid-template-columns: repeat(2, 1fr); }
+  }
+  .day {
+    background: var(--panel-2);
+    border-radius: 16px;
+    padding: 14px 10px;
+    text-align: center;
+  }
+  .day .wk { font-weight: 600; font-size: 1rem; }
+  .day .dt { color: var(--sub); font-size: 0.8rem; margin-top: 2px; }
+  .day .ic { font-size: 2.2rem; margin: 10px 0 2px; line-height: 1.1; }
+  .day .ds { color: var(--sub); font-size: 0.82rem; min-height: 1.2em; }
+  .day .tp { margin-top: 10px; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .day .tp .hi { color: var(--hot); font-weight: 600; }
+  .day .tp .lo { color: var(--cold); font-weight: 600; }
+  .rain-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--sub);
+    margin-top: 12px;
+  }
+  .rain-label b { color: var(--rain); font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; background: var(--rain-bg); border-radius: 999px; overflow: hidden; margin-top: 5px; }
+  .bar > i { display: block; height: 100%; background: var(--rain); border-radius: 999px; transition: width 0.4s; }
+
+  .msg { text-align: center; padding: 36px 12px; color: var(--sub); }
+  .msg.error { color: var(--err); }
+  .spinner {
+    width: 32px; height: 32px;
+    margin: 0 auto 12px;
+    border: 4px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  footer { text-align: center; color: var(--sub); font-size: 0.78rem; margin-top: 8px; line-height: 1.7; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>高雄市五日天氣預報</h1>
+      <div class="subtitle" id="updated">載入中…</div>
+    </div>
+    <button class="refresh" id="refreshBtn" type="button">重新整理</button>
+  </header>
+
+  <div id="status" class="card msg">
+    <div class="spinner"></div>
+    正在取得天氣資料…
+  </div>
+
+  <div id="content" class="hidden">
+    <section class="card now" id="now"></section>
+
+    <section class="card">
+      <h2 class="section-title">未來五天溫度趨勢</h2>
+      <div class="chart-wrap" id="chart"></div>
+      <div class="legend"><span class="h">最高溫</span><span class="l">最低溫</span></div>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">未來五天預報</h2>
+      <div class="days" id="days"></div>
+    </section>
+  </div>
+
+  <footer>
+    資料來源:Open-Meteo(預報模型資料,僅供參考)<br>
+    降雨機率為當日最大值,溫度單位為攝氏(°C)
+  </footer>
+</div>
+
+<script>
+(function () {
+  var LAT = 22.6273;
+  var LON = 120.3014;
+  var API = "https://api.open-meteo.com/v1/forecast"
+    + "?latitude=" + LAT
+    + "&longitude=" + LON
+    + "&current=temperature_2m,weather_code"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&timezone=Asia%2FTaipei"
+    + "&forecast_days=6";
+
+  // 目前顯示「今天之後的五天」。若想連今天一起算,把 FIRST_DAY 改成 0、LAST_DAY 改成 5。
+  var FIRST_DAY = 1;
+  var LAST_DAY = 6; // 不含
+
+  var WEEK = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
+
+  var statusEl = document.getElementById("status");
+  var contentEl = document.getElementById("content");
+  var nowEl = document.getElementById("now");
+  var chartEl = document.getElementById("chart");
+  var daysEl = document.getElementById("days");
+  var updatedEl = document.getElementById("updated");
+  var btn = document.getElementById("refreshBtn");
+
+  function weatherInfo(code) {
+    if (code === 0) return { icon: "☀️", text: "晴天" };
+    if (code === 1) return { icon: "🌤️", text: "大致晴朗" };
+    if (code === 2) return { icon: "⛅", text: "多雲" };
+    if (code === 3) return { icon: "☁️", text: "陰天" };
+    if (code === 45 || code === 48) return { icon: "🌫️", text: "有霧" };
+    if (code >= 51 && code <= 55) return { icon: "🌦️", text: "毛毛雨" };
+    if (code === 56 || code === 57) return { icon: "🌧️", text: "凍毛毛雨" };
+    if (code === 61) return { icon: "🌦️", text: "小雨" };
+    if (code === 63) return { icon: "🌧️", text: "中雨" };
+    if (code === 65) return { icon: "🌧️", text: "大雨" };
+    if (code === 66 || code === 67) return { icon: "🌧️", text: "凍雨" };
+    if (code >= 71 && code <= 77) return { icon: "🌨️", text: "降雪" };
+    if (code === 80) return { icon: "🌦️", text: "短暫陣雨" };
+    if (code === 81) return { icon: "🌧️", text: "陣雨" };
+    if (code === 82) return { icon: "⛈️", text: "強陣雨" };
+    if (code === 85 || code === 86) return { icon: "🌨️", text: "陣雪" };
+    if (code === 95) return { icon: "⛈️", text: "雷雨" };
+    if (code === 96 || code === 99) return { icon: "⛈️", text: "雷雨伴冰雹" };
+    return { icon: "❔", text: "未知" };
+  }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  function parseDate(s) {
+    var p = s.split("-");
+    return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  }
+
+  function fmtTemp(v) {
+    return (v === null || v === undefined) ? "—" : Math.round(v) + "°";
+  }
+
+  function showLoading() {
+    statusEl.className = "card msg";
+    statusEl.innerHTML = "";
+    statusEl.appendChild(el("div", "spinner"));
+    statusEl.appendChild(document.createTextNode("正在取得天氣資料…"));
+    statusEl.classList.remove("hidden");
+    contentEl.classList.add("hidden");
+    btn.disabled = true;
+  }
+
+  function showError(message) {
+    statusEl.className = "card msg error";
+    statusEl.innerHTML = "";
+    statusEl.appendChild(el("div", null, "無法取得天氣資料"));
+    statusEl.appendChild(el("div", null, message));
+    statusEl.appendChild(el("div", null, "請檢查網路連線後,按右上角「重新整理」再試一次。"));
+    statusEl.classList.remove("hidden");
+    contentEl.classList.add("hidden");
+    updatedEl.textContent = "更新失敗";
+    btn.disabled = false;
+  }
+
+  function buildDays(daily) {
+    var list = [];
+    for (var i = 0; i < daily.time.length; i++) {
+      list.push({
+        date: daily.time[i],
+        code: daily.weather_code[i],
+        max: daily.temperature_2m_max[i],
+        min: daily.temperature_2m_min[i],
+        rain: daily.precipitation_probability_max[i]
+      });
+    }
+    return list;
+  }
+
+  function renderNow(data, today) {
+    nowEl.innerHTML = "";
+    var cur = data.current || {};
+    var code = (cur.weather_code !== undefined) ? cur.weather_code : today.code;
+    var info = weatherInfo(code);
+
+    var main = el("div", "now-main");
+    main.appendChild(el("div", "now-icon", info.icon));
+    var box = el("div");
+    box.appendChild(el("div", "now-temp", fmtTemp(cur.temperature_2m)));
+    box.appendChild(el("div", "now-desc", "高雄市 · 目前" + info.text));
+    main.appendChild(box);
+    nowEl.appendChild(main);
+
+    var side = el("div", "now-side");
+    var l1 = el("div");
+    l1.appendChild(document.createTextNode("今日最高 "));
+    l1.appendChild(el("b", null, fmtTemp(today.max)));
+    var l2 = el("div");
+    l2.appendChild(document.createTextNode("今日最低 "));
+    l2.appendChild(el("b", null, fmtTemp(today.min)));
+    var l3 = el("div");
+    l3.appendChild(document.createTextNode("降雨機率 "));
+    l3.appendChild(el("b", null, today.rain === null || today.rain === undefined ? "—" : today.rain + "%"));
+    side.appendChild(l1);
+    side.appendChild(l2);
+    side.appendChild(l3);
+    nowEl.appendChild(side);
+  }
+
+  function svgEl(name, attrs) {
+    var n = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (var k in attrs) {
+      if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]);
+    }
+    return n;
+  }
+
+  function renderChart(days) {
+    chartEl.innerHTML = "";
+    var W = 640, H = 240;
+    var padL = 40, padR = 40, padT = 28, padB = 34;
+    var maxes = days.map(function (d) { return d.max; });
+    var mins = days.map(function (d) { return d.min; });
+    var lo = Math.floor(Math.min.apply(null, mins) - 2);
+    var hi = Math.ceil(Math.max.apply(null, maxes) + 2);
+    if (hi === lo) hi = lo + 1;
+
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來五天最高溫與最低溫趨勢圖" });
+
+    function xAt(i) {
+      if (days.length === 1) return W / 2;
+      return padL + i * (W - padL - padR) / (days.length - 1);
+    }
+    function yAt(v) {
+      return padT + (hi - v) * (H - padT - padB) / (hi - lo);
+    }
+
+    var steps = 4;
+    for (var g = 0; g <= steps; g++) {
+      var val = lo + (hi - lo) * g / steps;
+      var y = yAt(val);
+      svg.appendChild(svgEl("line", { "class": "grid", x1: padL - 6, x2: W - padR + 6, y1: y, y2: y }));
+      var t = svgEl("text", { x: padL - 10, y: y + 4, "text-anchor": "end" });
+      t.textContent = Math.round(val) + "°";
+      svg.appendChild(t);
+    }
+
+    function lineFor(values, cls) {
+      var pts = values.map(function (v, i) { return xAt(i) + "," + yAt(v); }).join(" ");
+      svg.appendChild(svgEl("polyline", { "class": cls, points: pts }));
+    }
+    lineFor(maxes, "line-hot");
+    lineFor(mins, "line-cold");
+
+    days.forEach(function (d, i) {
+      var x = xAt(i);
+      svg.appendChild(svgEl("circle", { "class": "dot-hot", cx: x, cy: yAt(d.max), r: 4.5 }));
+      svg.appendChild(svgEl("circle", { "class": "dot-cold", cx: x, cy: yAt(d.min), r: 4.5 }));
+
+      var th = svgEl("text", { "class": "val-hot", x: x, y: yAt(d.max) - 10, "text-anchor": "middle" });
+      th.textContent = fmtTemp(d.max);
+      svg.appendChild(th);
+
+      var tl = svgEl("text", { "class": "val-cold", x: x, y: yAt(d.min) + 20, "text-anchor": "middle" });
+      tl.textContent = fmtTemp(d.min);
+      svg.appendChild(tl);
+
+      var dt = parseDate(d.date);
+      var lab = svgEl("text", { x: x, y: H - 10, "text-anchor": "middle" });
+      lab.textContent = (dt.getMonth() + 1) + "/" + dt.getDate() + " " + WEEK[dt.getDay()];
+      svg.appendChild(lab);
+    });
+
+    chartEl.appendChild(svg);
+  }
+
+  function renderDays(days) {
+    daysEl.innerHTML = "";
+    days.forEach(function (d) {
+      var dt = parseDate(d.date);
+      var info = weatherInfo(d.code);
+      var card = el("div", "day");
+      card.appendChild(el("div", "wk", WEEK[dt.getDay()]));
+      card.appendChild(el("div", "dt", (dt.getMonth() + 1) + "/" + dt.getDate()));
+      card.appendChild(el("div", "ic", info.icon));
+      card.appendChild(el("div", "ds", info.text));
+
+      var tp = el("div", "tp");
+      tp.appendChild(el("span", "hi", fmtTemp(d.max)));
+      tp.appendChild(document.createTextNode(" / "));
+      tp.appendChild(el("span", "lo", fmtTemp(d.min)));
+      card.appendChild(tp);
+
+      var hasRain = !(d.rain === null || d.rain === undefined);
+      var rl = el("div", "rain-label");
+      rl.appendChild(el("span", null, "降雨機率"));
+      rl.appendChild(el("b", null, hasRain ? d.rain + "%" : "—"));
+      card.appendChild(rl);
+
+      var bar = el("div", "bar");
+      var fill = el("i");
+      fill.style.width = (hasRain ? Math.max(0, Math.min(100, d.rain)) : 0) + "%";
+      bar.appendChild(fill);
+      card.appendChild(bar);
+
+      daysEl.appendChild(card);
+    });
+  }
+
+  function render(data) {
+    if (!data || !data.daily || !data.daily.time || data.daily.time.length === 0) {
+      showError("伺服器回傳的資料格式不正確。");
+      return;
+    }
+    var all = buildDays(data.daily);
+    var today = all[0];
+    var next = all.slice(FIRST_DAY, LAST_DAY);
+
+    renderNow(data, today);
+    renderChart(next);
+    renderDays(next);
+
+    var now = new Date();
+    var hh = ("0" + now.getHours()).slice(-2);
+    var mm = ("0" + now.getMinutes()).slice(-2);
+    updatedEl.textContent = "最後更新:" + (now.getMonth() + 1) + "/" + now.getDate() + " " + hh + ":" + mm;
+
+    statusEl.classList.add("hidden");
+    contentEl.classList.remove("hidden");
+    btn.disabled = false;
+  }
+
+  function load() {
+    showLoading();
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = setTimeout(function () { if (controller) controller.abort(); }, 12000);
+
+    fetch(API, controller ? { signal: controller.signal } : undefined)
+      .then(function (res) {
+        if (!res.ok) throw new Error("伺服器回應錯誤(狀態碼 " + res.status + ")");
+        return res.json();
+      })
+      .then(function (data) {
+        clearTimeout(timer);
+        render(data);
+      })
+      .catch(function (err) {
+        clearTimeout(timer);
+        var msg = (err && err.name === "AbortError") ? "連線逾時。" : (err && err.message ? err.message : "發生未知錯誤。");
+        showError(msg);
+      });
+  }
+
+  btn.addEventListener("click", load);
+  load();
+})();
+</script>
+</body>
+</html>
