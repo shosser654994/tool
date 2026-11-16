@@ -16,6 +16,7 @@
     --cold: #2f7ef0;
     --rain: #3b82f6;
     --rain-bg: #dbe7ff;
+    --mm: #0d9488;
     --err: #dc2626;
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
@@ -33,6 +34,7 @@
       --cold: #6aa6ff;
       --rain: #5b95f8;
       --rain-bg: #27385f;
+      --mm: #2dd4bf;
       --err: #f87171;
       --accent: #3b82f6;
       --accent-hover: #5b95f8;
@@ -100,14 +102,21 @@
   .chart-wrap { width: 100%; overflow-x: auto; }
   svg.chart { width: 100%; height: auto; min-width: 440px; display: block; }
   svg.chart text { fill: var(--sub); font-size: 12px; }
+  svg.chart text.panel-title { fill: var(--text); font-size: 13px; font-weight: 600; }
   svg.chart text.val-hot { fill: var(--hot); font-weight: 600; }
   svg.chart text.val-cold { fill: var(--cold); font-weight: 600; }
+  svg.chart text.val-rain { fill: var(--rain); font-weight: 600; }
+  svg.chart text.val-mm { fill: var(--mm); font-weight: 600; }
   svg.chart .grid { stroke: var(--line); stroke-width: 1; }
   svg.chart .line-hot { stroke: var(--hot); fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
   svg.chart .line-cold { stroke: var(--cold); fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .line-rain { stroke: var(--rain); fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .area-rain { fill: var(--rain-bg); opacity: 0.7; }
+  svg.chart .bar-mm { fill: var(--mm); }
   svg.chart .dot-hot { fill: var(--hot); }
   svg.chart .dot-cold { fill: var(--cold); }
-  .legend { display: flex; gap: 16px; font-size: 0.82rem; color: var(--sub); margin-top: 8px; }
+  svg.chart .dot-rain { fill: var(--rain); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.82rem; color: var(--sub); margin-top: 8px; }
   .legend span::before {
     content: "";
     display: inline-block;
@@ -118,6 +127,8 @@
   }
   .legend .h::before { background: var(--hot); }
   .legend .l::before { background: var(--cold); }
+  .legend .p::before { background: var(--rain); }
+  .legend .m::before { background: var(--mm); }
 
   .days {
     display: grid;
@@ -185,9 +196,14 @@
     <section class="card now" id="now"></section>
 
     <section class="card">
-      <h2 class="section-title">未來五天溫度趨勢</h2>
+      <h2 class="section-title">未來五天溫度、降雨機率與降雨量</h2>
       <div class="chart-wrap" id="chart"></div>
-      <div class="legend"><span class="h">最高溫</span><span class="l">最低溫</span></div>
+      <div class="legend">
+        <span class="h">最高溫</span>
+        <span class="l">最低溫</span>
+        <span class="p">降雨機率</span>
+        <span class="m">降雨量</span>
+      </div>
     </section>
 
     <section class="card">
@@ -198,7 +214,7 @@
 
   <footer>
     資料來源:Open-Meteo(預報模型資料,僅供參考)<br>
-    降雨機率為當日最大值,溫度單位為攝氏(°C)
+    降雨機率為當日最大值,降雨量為當日總量(mm),溫度單位為攝氏(°C)
   </footer>
 </div>
 
@@ -210,7 +226,7 @@
     + "?latitude=" + LAT
     + "&longitude=" + LON
     + "&current=temperature_2m,weather_code"
-    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum"
     + "&timezone=Asia%2FTaipei"
     + "&forecast_days=6";
 
@@ -266,6 +282,11 @@
     return (v === null || v === undefined) ? "—" : Math.round(v) + "°";
   }
 
+  function fmtMm(v) {
+    if (v === null || v === undefined) return "—";
+    return (Math.round(v * 10) / 10) + " mm";
+  }
+
   function showLoading() {
     statusEl.className = "card msg";
     statusEl.innerHTML = "";
@@ -296,7 +317,8 @@
         code: daily.weather_code[i],
         max: daily.temperature_2m_max[i],
         min: daily.temperature_2m_min[i],
-        rain: daily.precipitation_probability_max[i]
+        rain: daily.precipitation_probability_max[i],
+        mm: daily.precipitation_sum ? daily.precipitation_sum[i] : null
       });
     }
     return list;
@@ -342,56 +364,112 @@
 
   function renderChart(days) {
     chartEl.innerHTML = "";
-    var W = 640, H = 240;
-    var padL = 40, padR = 40, padT = 28, padB = 34;
-    var maxes = days.map(function (d) { return d.max; });
-    var mins = days.map(function (d) { return d.min; });
-    var lo = Math.floor(Math.min.apply(null, mins) - 2);
-    var hi = Math.ceil(Math.max.apply(null, maxes) + 2);
-    if (hi === lo) hi = lo + 1;
+    var W = 640, H = 540;
+    var padL = 44, padR = 44;
+    var n = days.length;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來五天最高溫與最低溫趨勢圖" });
+    // 三個面板的垂直範圍:[上, 下]
+    var P1 = [34, 200];   // 溫度
+    var P2 = [262, 352];  // 降雨機率
+    var P3 = [414, 490];  // 降雨量
+
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來五天溫度、降雨機率與降雨量圖表" });
 
     function xAt(i) {
-      if (days.length === 1) return W / 2;
-      return padL + i * (W - padL - padR) / (days.length - 1);
+      if (n === 1) return W / 2;
+      return padL + i * (W - padL - padR) / (n - 1);
     }
-    function yAt(v) {
-      return padT + (hi - v) * (H - padT - padB) / (hi - lo);
+    function scale(panel, lo, hi) {
+      return function (v) { return panel[1] - (v - lo) * (panel[1] - panel[0]) / (hi - lo); };
     }
-
-    var steps = 4;
-    for (var g = 0; g <= steps; g++) {
-      var val = lo + (hi - lo) * g / steps;
-      var y = yAt(val);
-      svg.appendChild(svgEl("line", { "class": "grid", x1: padL - 6, x2: W - padR + 6, y1: y, y2: y }));
-      var t = svgEl("text", { x: padL - 10, y: y + 4, "text-anchor": "end" });
-      t.textContent = Math.round(val) + "°";
+    function title(text, y) {
+      var t = svgEl("text", { "class": "panel-title", x: padL - 34, y: y });
+      t.textContent = text;
       svg.appendChild(t);
     }
+    function grid(panel, lo, hi, steps, fmt, yAt) {
+      for (var g = 0; g <= steps; g++) {
+        var val = lo + (hi - lo) * g / steps;
+        var y = yAt(val);
+        svg.appendChild(svgEl("line", { "class": "grid", x1: padL - 6, x2: W - padR + 6, y1: y, y2: y }));
+        var t = svgEl("text", { x: padL - 10, y: y + 4, "text-anchor": "end" });
+        t.textContent = fmt(val);
+        svg.appendChild(t);
+      }
+    }
 
-    function lineFor(values, cls) {
+    // ---- 面板 1:溫度 ----
+    var maxes = days.map(function (d) { return d.max; });
+    var mins = days.map(function (d) { return d.min; });
+    var tLo = Math.floor(Math.min.apply(null, mins) - 2);
+    var tHi = Math.ceil(Math.max.apply(null, maxes) + 2);
+    if (tHi === tLo) tHi = tLo + 1;
+    var yT = scale(P1, tLo, tHi);
+    title("溫度 (°C)", 16);
+    grid(P1, tLo, tHi, 4, function (v) { return Math.round(v) + "°"; }, yT);
+
+    function polyline(values, yAt, cls) {
       var pts = values.map(function (v, i) { return xAt(i) + "," + yAt(v); }).join(" ");
       svg.appendChild(svgEl("polyline", { "class": cls, points: pts }));
     }
-    lineFor(maxes, "line-hot");
-    lineFor(mins, "line-cold");
+    polyline(maxes, yT, "line-hot");
+    polyline(mins, yT, "line-cold");
 
     days.forEach(function (d, i) {
       var x = xAt(i);
-      svg.appendChild(svgEl("circle", { "class": "dot-hot", cx: x, cy: yAt(d.max), r: 4.5 }));
-      svg.appendChild(svgEl("circle", { "class": "dot-cold", cx: x, cy: yAt(d.min), r: 4.5 }));
-
-      var th = svgEl("text", { "class": "val-hot", x: x, y: yAt(d.max) - 10, "text-anchor": "middle" });
+      svg.appendChild(svgEl("circle", { "class": "dot-hot", cx: x, cy: yT(d.max), r: 4.5 }));
+      svg.appendChild(svgEl("circle", { "class": "dot-cold", cx: x, cy: yT(d.min), r: 4.5 }));
+      var th = svgEl("text", { "class": "val-hot", x: x, y: yT(d.max) - 10, "text-anchor": "middle" });
       th.textContent = fmtTemp(d.max);
       svg.appendChild(th);
-
-      var tl = svgEl("text", { "class": "val-cold", x: x, y: yAt(d.min) + 20, "text-anchor": "middle" });
+      var tl = svgEl("text", { "class": "val-cold", x: x, y: yT(d.min) + 20, "text-anchor": "middle" });
       tl.textContent = fmtTemp(d.min);
       svg.appendChild(tl);
+    });
+
+    // ---- 面板 2:降雨機率 ----
+    var yP = scale(P2, 0, 100);
+    title("降雨機率 (%)", 244);
+    grid(P2, 0, 100, 2, function (v) { return Math.round(v) + "%"; }, yP);
+
+    var probs = days.map(function (d) { return (d.rain === null || d.rain === undefined) ? 0 : d.rain; });
+    if (n > 1) {
+      var areaPts = probs.map(function (v, i) { return xAt(i) + "," + yP(v); });
+      areaPts.push(xAt(n - 1) + "," + yP(0));
+      areaPts.push(xAt(0) + "," + yP(0));
+      svg.appendChild(svgEl("polygon", { "class": "area-rain", points: areaPts.join(" ") }));
+    }
+    polyline(probs, yP, "line-rain");
+    days.forEach(function (d, i) {
+      var x = xAt(i);
+      var has = !(d.rain === null || d.rain === undefined);
+      svg.appendChild(svgEl("circle", { "class": "dot-rain", cx: x, cy: yP(probs[i]), r: 4.5 }));
+      var ty = yP(probs[i]) - 10;
+      if (ty < P2[0] + 4) ty = yP(probs[i]) + 20;
+      var t = svgEl("text", { "class": "val-rain", x: x, y: ty, "text-anchor": "middle" });
+      t.textContent = has ? d.rain + "%" : "—";
+      svg.appendChild(t);
+    });
+
+    // ---- 面板 3:降雨量 ----
+    var mmVals = days.map(function (d) { return (d.mm === null || d.mm === undefined) ? 0 : d.mm; });
+    var mmHi = Math.max(5, Math.ceil(Math.max.apply(null, mmVals)));
+    var yM = scale(P3, 0, mmHi);
+    title("降雨量 (mm)", 396);
+    grid(P3, 0, mmHi, 2, function (v) { return (Math.round(v * 10) / 10) + ""; }, yM);
+
+    var bw = Math.min(44, (W - padL - padR) / Math.max(n, 1) * 0.5);
+    days.forEach(function (d, i) {
+      var x = xAt(i);
+      var top = yM(mmVals[i]);
+      var h = Math.max(P3[1] - top, mmVals[i] > 0 ? 2 : 0);
+      svg.appendChild(svgEl("rect", { "class": "bar-mm", x: x - bw / 2, y: P3[1] - h, width: bw, height: h, rx: 4 }));
+      var t = svgEl("text", { "class": "val-mm", x: x, y: P3[1] - h - 6, "text-anchor": "middle" });
+      t.textContent = fmtMm(d.mm);
+      svg.appendChild(t);
 
       var dt = parseDate(d.date);
-      var lab = svgEl("text", { x: x, y: H - 10, "text-anchor": "middle" });
+      var lab = svgEl("text", { x: x, y: H - 14, "text-anchor": "middle" });
       lab.textContent = (dt.getMonth() + 1) + "/" + dt.getDate() + " " + WEEK[dt.getDay()];
       svg.appendChild(lab);
     });
@@ -427,6 +505,11 @@
       fill.style.width = (hasRain ? Math.max(0, Math.min(100, d.rain)) : 0) + "%";
       bar.appendChild(fill);
       card.appendChild(bar);
+
+      var ml = el("div", "rain-label");
+      ml.appendChild(el("span", null, "降雨量"));
+      ml.appendChild(el("b", null, fmtMm(d.mm)));
+      card.appendChild(ml);
 
       daysEl.appendChild(card);
     });
