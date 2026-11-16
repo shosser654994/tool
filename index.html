@@ -580,6 +580,7 @@
   var CACHE_KEY = "kh-weather-cache-v1";
   var TIMEOUTS = [15000, 20000, 25000]; // 每次嘗試的逾時時間,最多重試 3 次
   var loading = false;
+  var lastOk = 0; // 上次成功取得資料的時間
 
   function fetchOnce(timeoutMs) {
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
@@ -630,6 +631,7 @@
     tryFetch(0, null)
       .then(function (data) {
         saveCache(data);
+        lastOk = Date.now();
         render(data);
       })
       .catch(function (err) {
@@ -653,6 +655,20 @@
   }
 
   btn.addEventListener("click", load);
+
+  // 手機瀏覽器常把分頁凍結在背景,切回來時請求會逾時或資料過舊,所以回到前景時自動更新
+  function refreshIfStale(maxAgeMs) {
+    if (!lastOk || Date.now() - lastOk > maxAgeMs) load();
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") refreshIfStale(10 * 60 * 1000);
+  });
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) refreshIfStale(10 * 60 * 1000);
+  });
+  window.addEventListener("online", function () {
+    refreshIfStale(60 * 1000);
+  });
   load();
 })();
 </script>
