@@ -194,25 +194,24 @@
 
   <div id="content" class="hidden">
     <section class="card">
-      <h2 class="section-title">今天與未來五天溫度、降雨機率與降雨量</h2>
+      <h2 class="section-title">今天與未來五天溫度與降雨機率</h2>
       <div class="chart-wrap" id="chart"></div>
       <div class="legend">
         <span class="h">最高溫</span>
         <span class="l">最低溫</span>
         <span class="p">降雨機率</span>
-        <span class="m">降雨量</span>
       </div>
     </section>
 
     <section class="card">
-      <h2 class="section-title">今天至未來 3 天溫度變化(每 3 小時)</h2>
+      <h2 class="section-title">今天至未來 3 天溫度與時雨量(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
     </section>
   </div>
 
   <footer>
     資料來源:Open-Meteo(預報模型資料,僅供參考)<br>
-    降雨機率為當日最大值,降雨量為當日總量(mm),溫度單位為攝氏(°C)
+    降雨機率為當日最大值,時雨量為單一小時降雨量(mm),溫度單位為攝氏(°C)
   </footer>
 </div>
 
@@ -224,8 +223,8 @@
     + "?latitude=" + LAT
     + "&longitude=" + LON
     + "&current=temperature_2m,weather_code"
-    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum"
-    + "&hourly=temperature_2m"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&hourly=temperature_2m,precipitation"
     + "&timezone=Asia%2FTaipei"
     + "&forecast_days=6";
 
@@ -236,6 +235,8 @@
   // 下方逐時圖只標示低於 LOW_LIMIT 或高於 HIGH_LIMIT 的溫度
   var LOW_LIMIT = 23;
   var HIGH_LIMIT = 28;
+  // 時雨量超過此值(mm)才標示數字
+  var RAIN_LIMIT = 1;
 
   var WEEK = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
 
@@ -319,8 +320,7 @@
         code: daily.weather_code[i],
         max: daily.temperature_2m_max[i],
         min: daily.temperature_2m_min[i],
-        rain: daily.precipitation_probability_max[i],
-        mm: daily.precipitation_sum ? daily.precipitation_sum[i] : null
+        rain: daily.precipitation_probability_max[i]
       });
     }
     return list;
@@ -336,16 +336,15 @@
 
   function renderChart(days) {
     chartEl.innerHTML = "";
-    var W = 640, H = 540;
+    var W = 640, H = 390;
     var padL = 44, padR = 44;
     var n = days.length;
 
-    // 三個面板的垂直範圍:[上, 下]
+    // 兩個面板的垂直範圍:[上, 下]
     var P1 = [34, 200];   // 溫度
     var P2 = [262, 352];  // 降雨機率
-    var P3 = [414, 490];  // 降雨量
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天溫度、降雨機率與降雨量圖表" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天溫度與降雨機率圖表" });
 
     function xAt(i) {
       if (n === 1) return W / 2;
@@ -423,23 +422,9 @@
       svg.appendChild(t);
     });
 
-    // ---- 面板 3:降雨量 ----
-    var mmVals = days.map(function (d) { return (d.mm === null || d.mm === undefined) ? 0 : d.mm; });
-    var mmHi = Math.max(5, Math.ceil(Math.max.apply(null, mmVals)));
-    var yM = scale(P3, 0, mmHi);
-    title("降雨量 (mm)", 396);
-    grid(P3, 0, mmHi, 2, function (v) { return (Math.round(v * 10) / 10) + ""; }, yM);
-
-    var bw = Math.min(44, (W - padL - padR) / Math.max(n, 1) * 0.5);
+    // ---- X 軸日期標籤 ----
     days.forEach(function (d, i) {
       var x = xAt(i);
-      var top = yM(mmVals[i]);
-      var h = Math.max(P3[1] - top, mmVals[i] > 0 ? 2 : 0);
-      svg.appendChild(svgEl("rect", { "class": "bar-mm", x: x - bw / 2, y: P3[1] - h, width: bw, height: h, rx: 4 }));
-      var t = svgEl("text", { "class": "val-mm", x: x, y: P3[1] - h - 6, "text-anchor": "middle" });
-      t.textContent = fmtMm(d.mm);
-      svg.appendChild(t);
-
       var dt = parseDate(d.date);
       var lab = svgEl("text", { x: x, y: H - 14, "text-anchor": "middle" });
       var tag = WEEK[dt.getDay()];
@@ -465,18 +450,28 @@
     for (var j = idx % 3; j <= idx + 72 && j < h.time.length; j += 3) {
       if (h.temperature_2m[j] === null || h.temperature_2m[j] === undefined) continue;
       if (j === idx) nowI = pts.length;
-      pts.push({ time: h.time[j], temp: h.temperature_2m[j] });
+      // 時雨量:取該點前 3 小時內最大的單一小時降雨量
+      var rmm = 0;
+      if (h.precipitation) {
+        for (var q = Math.max(0, j - 2); q <= j; q++) {
+          var pv = h.precipitation[q];
+          if (pv !== null && pv !== undefined && pv > rmm) rmm = pv;
+        }
+      }
+      pts.push({ time: h.time[j], temp: h.temperature_2m[j], mm: rmm });
     }
     if (pts.length === 0) return;
 
-    var W = Math.max(1000, pts.length * 44), H = 250;
+    var W = Math.max(1000, pts.length * 44), H = 330;
     var padL = 40, padR = 30, padT = 30, padB = 46;
+    var tempBottom = 190;           // 溫度面板下緣
+    var rainTop = 222, rainBottom = 276; // 時雨量面板
     var temps = pts.map(function (p) { return p.temp; });
     var lo = Math.floor(Math.min.apply(null, temps) - 1);
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時溫度變化圖" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時溫度與時雨量圖" });
     svg.style.minWidth = Math.round(W * 0.9) + "px";
 
     function xAt(i) {
@@ -484,7 +479,7 @@
       return padL + i * (W - padL - padR) / (pts.length - 1);
     }
     function yAt(v) {
-      return padT + (hi - v) * (H - padT - padB) / (hi - lo);
+      return padT + (hi - v) * (tempBottom - padT) / (hi - lo);
     }
 
     var steps = 4;
@@ -502,11 +497,31 @@
 
     if (nowI >= 0) {
       var nx = xAt(nowI);
-      svg.appendChild(svgEl("line", { x1: nx, x2: nx, y1: padT - 12, y2: H - padB + 4, stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 4" }));
+      svg.appendChild(svgEl("line", { x1: nx, x2: nx, y1: padT - 12, y2: rainBottom + 4, stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 4" }));
       var nt = svgEl("text", { x: nx, y: padT - 16, "text-anchor": "middle" });
       nt.textContent = "現在";
       svg.appendChild(nt);
     }
+
+    // ---- 時雨量面板 ----
+    var rainMax = Math.max(2, Math.ceil(Math.max.apply(null, pts.map(function (p) { return p.mm; }))));
+    function yR(v) { return rainBottom - v * (rainBottom - rainTop) / rainMax; }
+    var rt = svgEl("text", { "class": "panel-title", x: padL - 34, y: rainTop - 12 });
+    rt.textContent = "時雨量 (mm)";
+    svg.appendChild(rt);
+    svg.appendChild(svgEl("line", { "class": "grid", x1: padL - 6, x2: W - padR + 6, y1: rainBottom, y2: rainBottom }));
+    var bw = Math.min(26, (W - padL - padR) / Math.max(pts.length, 1) * 0.5);
+    pts.forEach(function (p, i) {
+      if (!(p.mm > 0)) return;
+      var x = xAt(i);
+      var bh = Math.max(rainBottom - yR(p.mm), 2);
+      svg.appendChild(svgEl("rect", { "class": "bar-mm", x: x - bw / 2, y: rainBottom - bh, width: bw, height: bh, rx: 3 }));
+      if (p.mm > RAIN_LIMIT) {
+        var rl = svgEl("text", { "class": "val-mm", x: x, y: rainBottom - bh - 6, "text-anchor": "middle" });
+        rl.textContent = (Math.round(p.mm * 10) / 10) + "";
+        svg.appendChild(rl);
+      }
+    });
 
     var prevDate = "";
     pts.forEach(function (p, i) {
