@@ -577,24 +577,78 @@
     btn.disabled = false;
   }
 
-  function load() {
-    showLoading();
-    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var timer = setTimeout(function () { if (controller) controller.abort(); }, 12000);
+  var CACHE_KEY = "kh-weather-cache-v1";
+  var TIMEOUTS = [15000, 20000, 25000]; // 每次嘗試的逾時時間,最多重試 3 次
+  var loading = false;
 
-    fetch(API, controller ? { signal: controller.signal } : undefined)
+  function fetchOnce(timeoutMs) {
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = setTimeout(function () { if (controller) controller.abort(); }, timeoutMs);
+    return fetch(API, controller ? { signal: controller.signal } : undefined)
       .then(function (res) {
         if (!res.ok) throw new Error("伺服器回應錯誤(狀態碼 " + res.status + ")");
         return res.json();
       })
       .then(function (data) {
         clearTimeout(timer);
+        return data;
+      }, function (err) {
+        clearTimeout(timer);
+        throw err;
+      });
+  }
+
+  function wait(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function saveCache(data) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: data })); } catch (e) {}
+  }
+
+  function readCache() {
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      var obj = JSON.parse(raw);
+      return (obj && obj.data && obj.t) ? obj : null;
+    } catch (e) { return null; }
+  }
+
+  function tryFetch(attempt, lastErr) {
+    if (attempt >= TIMEOUTS.length) return Promise.reject(lastErr);
+    return fetchOnce(TIMEOUTS[attempt]).catch(function (err) {
+      return wait(1000).then(function () { return tryFetch(attempt + 1, err); });
+    });
+  }
+
+  function load() {
+    if (loading) return;
+    loading = true;
+    showLoading();
+
+    tryFetch(0, null)
+      .then(function (data) {
+        saveCache(data);
         render(data);
       })
       .catch(function (err) {
-        clearTimeout(timer);
         var msg = (err && err.name === "AbortError") ? "連線逾時。" : (err && err.message ? err.message : "發生未知錯誤。");
-        showError(msg);
+        var cached = readCache();
+        if (cached) {
+          // 網路不穩時,先顯示上次成功取得的資料
+          render(cached.data);
+          var d = new Date(cached.t);
+          var hh = ("0" + d.getHours()).slice(-2);
+          var mm = ("0" + d.getMinutes()).slice(-2);
+          updatedEl.textContent = "連線失敗,顯示 " + (d.getMonth() + 1) + "/" + d.getDate() + " " + hh + ":" + mm + " 的舊資料";
+        } else {
+          showError(msg);
+        }
+      })
+      .then(function () {
+        loading = false;
+        btn.disabled = false;
       });
   }
 
