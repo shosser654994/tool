@@ -194,7 +194,7 @@
 
   <div id="content" class="hidden">
     <section class="card">
-      <h2 class="section-title">昨天、今天與未來五天溫度、降雨機率與降雨量</h2>
+      <h2 class="section-title">今天與未來五天溫度、降雨機率與降雨量</h2>
       <div class="chart-wrap" id="chart"></div>
       <div class="legend">
         <span class="h">最高溫</span>
@@ -205,7 +205,7 @@
     </section>
 
     <section class="card">
-      <h2 class="section-title">昨天至未來 3 天溫度變化(每 3 小時)</h2>
+      <h2 class="section-title">今天至未來 3 天溫度變化(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
     </section>
   </div>
@@ -227,12 +227,11 @@
     + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum"
     + "&hourly=temperature_2m"
     + "&timezone=Asia%2FTaipei"
-    + "&past_days=1"
     + "&forecast_days=6";
 
-  // 資料含昨天(索引0)、今天(索引1)與未來五天。上方圖表顯示全部 7 天。
+  // 資料含今天(索引0)與未來五天。上方圖表顯示全部 6 天。
   var FIRST_DAY = 0;
-  var LAST_DAY = 7; // 不含
+  var LAST_DAY = 6; // 不含
   var todayKey = "";
   // 下方逐時圖只標示低於 LOW_LIMIT 或高於 HIGH_LIMIT 的溫度
   var LOW_LIMIT = 23;
@@ -346,7 +345,7 @@
     var P2 = [262, 352];  // 降雨機率
     var P3 = [414, 490];  // 降雨量
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "昨天、今天與未來五天溫度、降雨機率與降雨量圖表" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天溫度、降雨機率與降雨量圖表" });
 
     function xAt(i) {
       if (n === 1) return W / 2;
@@ -445,7 +444,6 @@
       var lab = svgEl("text", { x: x, y: H - 14, "text-anchor": "middle" });
       var tag = WEEK[dt.getDay()];
       if (d.date === todayKey) tag = "今天";
-      else if (d.date < todayKey) tag = "昨天";
       lab.textContent = (dt.getMonth() + 1) + "/" + dt.getDate() + " " + tag;
       svg.appendChild(lab);
     });
@@ -478,7 +476,7 @@
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "昨天至未來 3 天每 3 小時溫度變化圖" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時溫度變化圖" });
     svg.style.minWidth = Math.round(W * 0.9) + "px";
 
     function xAt(i) {
