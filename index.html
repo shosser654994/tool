@@ -193,10 +193,8 @@
   </div>
 
   <div id="content" class="hidden">
-    <section class="card now" id="now"></section>
-
     <section class="card">
-      <h2 class="section-title">未來五天溫度、降雨機率與降雨量</h2>
+      <h2 class="section-title">昨天、今天與未來五天溫度、降雨機率與降雨量</h2>
       <div class="chart-wrap" id="chart"></div>
       <div class="legend">
         <span class="h">最高溫</span>
@@ -207,7 +205,7 @@
     </section>
 
     <section class="card">
-      <h2 class="section-title">未來 3 天溫度變化(每 3 小時)</h2>
+      <h2 class="section-title">昨天至未來 3 天溫度變化(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
     </section>
   </div>
@@ -229,17 +227,18 @@
     + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum"
     + "&hourly=temperature_2m"
     + "&timezone=Asia%2FTaipei"
+    + "&past_days=1"
     + "&forecast_days=6";
 
-  // 目前顯示「今天之後的五天」。若想連今天一起算,把 FIRST_DAY 改成 0、LAST_DAY 改成 5。
-  var FIRST_DAY = 1;
-  var LAST_DAY = 6; // 不含
+  // 資料含昨天(索引0)、今天(索引1)與未來五天。上方圖表顯示全部 7 天。
+  var FIRST_DAY = 0;
+  var LAST_DAY = 7; // 不含
+  var todayKey = "";
 
   var WEEK = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
 
   var statusEl = document.getElementById("status");
   var contentEl = document.getElementById("content");
-  var nowEl = document.getElementById("now");
   var chartEl = document.getElementById("chart");
   var hourlyEl = document.getElementById("hourly");
   var updatedEl = document.getElementById("updated");
@@ -325,36 +324,6 @@
     return list;
   }
 
-  function renderNow(data, today) {
-    nowEl.innerHTML = "";
-    var cur = data.current || {};
-    var code = (cur.weather_code !== undefined) ? cur.weather_code : today.code;
-    var info = weatherInfo(code);
-
-    var main = el("div", "now-main");
-    main.appendChild(el("div", "now-icon", info.icon));
-    var box = el("div");
-    box.appendChild(el("div", "now-temp", fmtTemp(cur.temperature_2m)));
-    box.appendChild(el("div", "now-desc", "高雄市 · 目前" + info.text));
-    main.appendChild(box);
-    nowEl.appendChild(main);
-
-    var side = el("div", "now-side");
-    var l1 = el("div");
-    l1.appendChild(document.createTextNode("今日最高 "));
-    l1.appendChild(el("b", null, fmtTemp(today.max)));
-    var l2 = el("div");
-    l2.appendChild(document.createTextNode("今日最低 "));
-    l2.appendChild(el("b", null, fmtTemp(today.min)));
-    var l3 = el("div");
-    l3.appendChild(document.createTextNode("降雨機率 "));
-    l3.appendChild(el("b", null, today.rain === null || today.rain === undefined ? "—" : today.rain + "%"));
-    side.appendChild(l1);
-    side.appendChild(l2);
-    side.appendChild(l3);
-    nowEl.appendChild(side);
-  }
-
   function svgEl(name, attrs) {
     var n = document.createElementNS("http://www.w3.org/2000/svg", name);
     for (var k in attrs) {
@@ -374,7 +343,7 @@
     var P2 = [262, 352];  // 降雨機率
     var P3 = [414, 490];  // 降雨量
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來五天溫度、降雨機率與降雨量圖表" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "昨天、今天與未來五天溫度、降雨機率與降雨量圖表" });
 
     function xAt(i) {
       if (n === 1) return W / 2;
@@ -471,7 +440,10 @@
 
       var dt = parseDate(d.date);
       var lab = svgEl("text", { x: x, y: H - 14, "text-anchor": "middle" });
-      lab.textContent = (dt.getMonth() + 1) + "/" + dt.getDate() + " " + WEEK[dt.getDay()];
+      var tag = WEEK[dt.getDay()];
+      if (d.date === todayKey) tag = "今天";
+      else if (d.date < todayKey) tag = "昨天";
+      lab.textContent = (dt.getMonth() + 1) + "/" + dt.getDate() + " " + tag;
       svg.appendChild(lab);
     });
 
@@ -488,23 +460,23 @@
     if (idx < 0) idx = 0;
 
     var pts = [];
-    for (var k = 0; k <= 24; k++) {
-      var j = idx + k * 3;
-      if (j >= h.time.length) break;
+    var nowI = -1;
+    for (var j = idx % 3; j <= idx + 72 && j < h.time.length; j += 3) {
       if (h.temperature_2m[j] === null || h.temperature_2m[j] === undefined) continue;
+      if (j === idx) nowI = pts.length;
       pts.push({ time: h.time[j], temp: h.temperature_2m[j] });
     }
     if (pts.length === 0) return;
 
-    var W = 1000, H = 250;
+    var W = Math.max(1000, pts.length * 44), H = 250;
     var padL = 40, padR = 30, padT = 30, padB = 46;
     var temps = pts.map(function (p) { return p.temp; });
     var lo = Math.floor(Math.min.apply(null, temps) - 1);
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來 3 天每 3 小時溫度變化圖" });
-    svg.style.minWidth = "900px";
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "昨天至未來 3 天每 3 小時溫度變化圖" });
+    svg.style.minWidth = Math.round(W * 0.9) + "px";
 
     function xAt(i) {
       if (pts.length === 1) return W / 2;
@@ -526,6 +498,14 @@
 
     var line = pts.map(function (p, i) { return xAt(i) + "," + yAt(p.temp); }).join(" ");
     svg.appendChild(svgEl("polyline", { "class": "line-hot", points: line }));
+
+    if (nowI >= 0) {
+      var nx = xAt(nowI);
+      svg.appendChild(svgEl("line", { x1: nx, x2: nx, y1: padT - 12, y2: H - padB + 4, stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 4" }));
+      var nt = svgEl("text", { x: nx, y: padT - 16, "text-anchor": "middle" });
+      nt.textContent = "現在";
+      svg.appendChild(nt);
+    }
 
     var prevDate = "";
     pts.forEach(function (p, i) {
@@ -560,10 +540,9 @@
       return;
     }
     var all = buildDays(data.daily);
-    var today = all[0];
     var next = all.slice(FIRST_DAY, LAST_DAY);
+    todayKey = (data.current && data.current.time) ? data.current.time.slice(0, 10) : "";
 
-    renderNow(data, today);
     renderChart(next);
     renderHourly(data);
 
