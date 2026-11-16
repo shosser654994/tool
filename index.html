@@ -207,7 +207,7 @@
     </section>
 
     <section class="card">
-      <h2 class="section-title">未來 24 小時溫度變化(每 3 小時)</h2>
+      <h2 class="section-title">未來 3 天溫度變化(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
     </section>
   </div>
@@ -488,7 +488,7 @@
     if (idx < 0) idx = 0;
 
     var pts = [];
-    for (var k = 0; k <= 8; k++) {
+    for (var k = 0; k <= 24; k++) {
       var j = idx + k * 3;
       if (j >= h.time.length) break;
       if (h.temperature_2m[j] === null || h.temperature_2m[j] === undefined) continue;
@@ -496,14 +496,15 @@
     }
     if (pts.length === 0) return;
 
-    var W = 640, H = 250;
+    var W = 1000, H = 250;
     var padL = 40, padR = 30, padT = 30, padB = 46;
     var temps = pts.map(function (p) { return p.temp; });
     var lo = Math.floor(Math.min.apply(null, temps) - 1);
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來 24 小時每 3 小時溫度變化圖" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "未來 3 天每 3 小時溫度變化圖" });
+    svg.style.minWidth = "900px";
 
     function xAt(i) {
       if (pts.length === 1) return W / 2;
