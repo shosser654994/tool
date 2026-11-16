@@ -17,6 +17,7 @@
     --rain: #3b82f6;
     --rain-bg: #dbe7ff;
     --mm: #0d9488;
+    --mid: #16a34a;
     --err: #dc2626;
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
@@ -35,6 +36,7 @@
       --rain: #5b95f8;
       --rain-bg: #27385f;
       --mm: #2dd4bf;
+      --mid: #4ade80;
       --err: #f87171;
       --accent: #3b82f6;
       --accent-hover: #5b95f8;
@@ -115,6 +117,11 @@
   svg.chart .bar-mm { fill: var(--mm); }
   svg.chart .dot-hot { fill: var(--hot); }
   svg.chart .dot-cold { fill: var(--cold); }
+  svg.chart .dot-mid { fill: var(--mid); }
+  svg.chart .seg { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+  svg.chart .seg-low { stroke: var(--cold); }
+  svg.chart .seg-mid { stroke: var(--mid); }
+  svg.chart .seg-high { stroke: var(--hot); }
   svg.chart .dot-rain { fill: var(--rain); }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.82rem; color: var(--sub); margin-top: 8px; }
   .legend span::before {
@@ -492,8 +499,30 @@
       svg.appendChild(t);
     }
 
-    var line = pts.map(function (p, i) { return xAt(i) + "," + yAt(p.temp); }).join(" ");
-    svg.appendChild(svgEl("polyline", { "class": "line-hot", points: line }));
+    // 線段依溫度分三色:低於 LOW_LIMIT、介於兩者之間、高於 HIGH_LIMIT。
+    // 線段跨越門檻時,在交界處切開,各段分別上色。
+    function zoneOf(t) {
+      if (t < LOW_LIMIT) return "seg-low";
+      if (t > HIGH_LIMIT) return "seg-high";
+      return "seg-mid";
+    }
+    function drawSeg(x1, t1, x2, t2) {
+      var zone = zoneOf((t1 + t2) / 2);
+      svg.appendChild(svgEl("line", { "class": "seg " + zone, x1: x1, y1: yAt(t1), x2: x2, y2: yAt(t2) }));
+    }
+    for (var si = 0; si < pts.length - 1; si++) {
+      var xa = xAt(si), xb = xAt(si + 1);
+      var ta = pts[si].temp, tb = pts[si + 1].temp;
+      var cuts = [0, 1];
+      [LOW_LIMIT, HIGH_LIMIT].forEach(function (lim) {
+        if ((ta - lim) * (tb - lim) < 0) cuts.push((lim - ta) / (tb - ta));
+      });
+      cuts.sort(function (a, b) { return a - b; });
+      for (var ci = 0; ci < cuts.length - 1; ci++) {
+        var f1 = cuts[ci], f2 = cuts[ci + 1];
+        drawSeg(xa + (xb - xa) * f1, ta + (tb - ta) * f1, xa + (xb - xa) * f2, ta + (tb - ta) * f2);
+      }
+    }
 
     if (nowI >= 0) {
       var nx = xAt(nowI);
@@ -529,7 +558,7 @@
       var isLow = p.temp < LOW_LIMIT;
       var isHigh = p.temp > HIGH_LIMIT;
       var flagged = isLow || isHigh;
-      svg.appendChild(svgEl("circle", { "class": isLow ? "dot-cold" : "dot-hot", cx: x, cy: yAt(p.temp), r: flagged ? 5 : 3 }));
+      svg.appendChild(svgEl("circle", { "class": isLow ? "dot-cold" : (isHigh ? "dot-hot" : "dot-mid"), cx: x, cy: yAt(p.temp), r: flagged ? 5 : 3 }));
 
       if (flagged) {
         var tv = svgEl("text", { "class": isLow ? "val-cold" : "val-hot", x: x, y: isLow ? yAt(p.temp) + 20 : yAt(p.temp) - 10, "text-anchor": "middle" });
