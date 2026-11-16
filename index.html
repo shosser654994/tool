@@ -18,6 +18,7 @@
     --rain-bg: #dbe7ff;
     --mm: #0d9488;
     --mid: #16a34a;
+    --feel: #9333ea;
     --err: #dc2626;
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
@@ -37,6 +38,7 @@
       --rain-bg: #27385f;
       --mm: #2dd4bf;
       --mid: #4ade80;
+      --feel: #c084fc;
       --err: #f87171;
       --accent: #3b82f6;
       --accent-hover: #5b95f8;
@@ -118,6 +120,10 @@
   svg.chart .dot-hot { fill: var(--hot); }
   svg.chart .dot-cold { fill: var(--cold); }
   svg.chart .dot-mid { fill: var(--mid); }
+  svg.chart .line-feel { stroke: var(--feel); fill: none; stroke-width: 2; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart text.val-feel { fill: var(--feel); font-weight: 600; }
+  .legend .t::before { background: linear-gradient(90deg, var(--cold), var(--mid), var(--hot)); }
+  .legend .f::before { background: var(--feel); }
   svg.chart .seg { fill: none; stroke-width: 2.5; stroke-linecap: round; }
   svg.chart .seg-low { stroke: var(--cold); }
   svg.chart .seg-mid { stroke: var(--mid); }
@@ -211,8 +217,9 @@
     </section>
 
     <section class="card">
-      <h2 class="section-title">今天至未來 3 天溫度與時雨量(每 3 小時)</h2>
+      <h2 class="section-title">今天至未來 3 天溫度、體感溫度與時雨量(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
+      <div class="legend"><span class="t">溫度</span><span class="f">體感溫度(虛線)</span><span class="m">時雨量</span></div>
     </section>
   </div>
 
@@ -231,7 +238,7 @@
     + "&longitude=" + LON
     + "&current=temperature_2m,weather_code"
     + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-    + "&hourly=temperature_2m,precipitation"
+    + "&hourly=temperature_2m,apparent_temperature,precipitation"
     + "&timezone=Asia%2FTaipei"
     + "&forecast_days=6";
 
@@ -465,7 +472,8 @@
           if (pv !== null && pv !== undefined && pv > rmm) rmm = pv;
         }
       }
-      pts.push({ time: h.time[j], temp: h.temperature_2m[j], mm: rmm });
+      var feel = h.apparent_temperature ? h.apparent_temperature[j] : null;
+      pts.push({ time: h.time[j], temp: h.temperature_2m[j], feel: (feel === undefined ? null : feel), mm: rmm });
     }
     if (pts.length === 0) return;
 
@@ -473,7 +481,11 @@
     var padL = 40, padR = 30, padT = 30, padB = 46;
     var tempBottom = 190;           // 溫度面板下緣
     var rainTop = 222, rainBottom = 276; // 時雨量面板
-    var temps = pts.map(function (p) { return p.temp; });
+    var temps = [];
+    pts.forEach(function (p) {
+      temps.push(p.temp);
+      if (p.feel !== null) temps.push(p.feel);
+    });
     var lo = Math.floor(Math.min.apply(null, temps) - 1);
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
@@ -530,6 +542,28 @@
       var nt = svgEl("text", { x: nx, y: padT - 16, "text-anchor": "middle" });
       nt.textContent = "現在";
       svg.appendChild(nt);
+    }
+
+    // ---- 體感溫度:紫色虛線,只標示最高與最低點 ----
+    var feelPts = [];
+    pts.forEach(function (p, i) { if (p.feel !== null) feelPts.push({ i: i, v: p.feel }); });
+    if (feelPts.length > 1) {
+      var fl = feelPts.map(function (q) { return xAt(q.i) + "," + yAt(q.v); }).join(" ");
+      svg.appendChild(svgEl("polyline", { "class": "line-feel", points: fl }));
+    }
+    if (feelPts.length > 0) {
+      var fMax = feelPts[0], fMin = feelPts[0];
+      feelPts.forEach(function (q) {
+        if (q.v > fMax.v) fMax = q;
+        if (q.v < fMin.v) fMin = q;
+      });
+      [[fMax, -10], [fMin, 20]].forEach(function (pair) {
+        var q = pair[0];
+        if (pair === undefined) return;
+        var ft = svgEl("text", { "class": "val-feel", x: xAt(q.i), y: yAt(q.v) + pair[1], "text-anchor": "middle" });
+        ft.textContent = fmtTemp(q.v);
+        svg.appendChild(ft);
+      });
     }
 
     // ---- 時雨量面板 ----
