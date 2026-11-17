@@ -138,6 +138,9 @@
   svg.chart text.val-feel { fill: var(--feel); font-weight: 600; }
   .legend .t::before { background: linear-gradient(90deg, var(--cold), var(--mid), var(--hot)); }
   .legend .f::before { background: var(--feel); }
+  svg.chart .day-bg { fill: var(--panel-2); }
+  svg.chart .day-sep { stroke: var(--sub); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.6; }
+  svg.chart text.day-lab { fill: var(--text); font-size: 12px; font-weight: 600; }
   svg.chart .seg { fill: none; stroke-width: 2.5; stroke-linecap: round; }
   svg.chart .seg-low { stroke: var(--cold); }
   svg.chart .seg-mid { stroke: var(--mid); }
@@ -530,6 +533,34 @@
       return padT + (hi - v) * (tempBottom - padT) / (hi - lo);
     }
 
+    // ---- 每日區塊:依日期分組,奇數日加底色,日界處畫虛線,左上角標示日期 ----
+    var DAY_NAMES = ["今天", "明天", "後天"];
+    var groups = [];
+    pts.forEach(function (p, i) {
+      var key = p.time.slice(0, 10);
+      var last = groups[groups.length - 1];
+      if (last && last.key === key) last.i1 = i;
+      else groups.push({ key: key, i0: i, i1: i });
+    });
+    var blockTop = 4, blockH = H - 8;
+    groups.forEach(function (g, gi) {
+      var left = (g.i0 === 0) ? padL - 8 : (xAt(g.i0 - 1) + xAt(g.i0)) / 2;
+      var right = (g.i1 === pts.length - 1) ? W - padR + 8 : (xAt(g.i1) + xAt(g.i1 + 1)) / 2;
+      if (gi % 2 === 0) {
+        svg.appendChild(svgEl("rect", { "class": "day-bg", x: left, y: blockTop, width: right - left, height: blockH, rx: 8 }));
+      }
+      if (g.i0 > 0) {
+        svg.appendChild(svgEl("line", { "class": "day-sep", x1: left, x2: left, y1: blockTop, y2: blockTop + blockH }));
+      }
+      var dt = parseDate(g.key);
+      var diff = todayKey ? Math.round((dt - parseDate(todayKey)) / 86400000) : -1;
+      var name = (diff >= 0 && diff < DAY_NAMES.length) ? DAY_NAMES[diff] : WEEK[dt.getDay()];
+      var label = (right - left >= 90) ? name + " " + (dt.getMonth() + 1) + "/" + dt.getDate() : name;
+      var dl = svgEl("text", { "class": "day-lab", x: left + 8, y: blockTop + 15 });
+      dl.textContent = label;
+      svg.appendChild(dl);
+    });
+
     var steps = 4;
     for (var g = 0; g <= steps; g++) {
       var val = lo + (hi - lo) * g / steps;
@@ -593,7 +624,6 @@
       }
     });
 
-    var prevDate = "";
     pts.forEach(function (p, i) {
       var x = xAt(i);
       var isLow = p.temp < LOW_LIMIT;
@@ -610,15 +640,6 @@
       var tl = svgEl("text", { x: x, y: H - 22, "text-anchor": "middle" });
       tl.textContent = hh;
       svg.appendChild(tl);
-
-      var dateStr = p.time.slice(0, 10);
-      if (dateStr !== prevDate) {
-        var dt = parseDate(dateStr);
-        var dl = svgEl("text", { x: x, y: H - 6, "text-anchor": "middle" });
-        dl.textContent = (dt.getMonth() + 1) + "/" + dt.getDate() + " " + WEEK[dt.getDay()];
-        svg.appendChild(dl);
-        prevDate = dateStr;
-      }
     });
 
     hourlyEl.appendChild(svg);
