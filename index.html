@@ -208,25 +208,25 @@
 
   <div id="content" class="hidden">
     <section class="card">
-      <h2 class="section-title">今天與未來五天溫度與降雨機率</h2>
+      <h2 class="section-title">今天與未來五天體感溫度與降雨機率</h2>
       <div class="chart-wrap" id="chart"></div>
       <div class="legend">
-        <span class="h">最高溫</span>
-        <span class="l">最低溫</span>
+        <span class="h">體感最高溫</span>
+        <span class="l">體感最低溫</span>
         <span class="p">降雨機率</span>
       </div>
     </section>
 
     <section class="card">
-      <h2 class="section-title">今天至未來 3 天溫度、體感溫度與時雨量(每 3 小時)</h2>
+      <h2 class="section-title">今天至未來 3 天體感溫度與時雨量(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
-      <div class="legend"><span class="t">溫度</span><span class="f">體感溫度(虛線)</span><span class="m">時雨量</span></div>
+      <div class="legend"><span class="t">體感溫度</span><span class="m">時雨量</span></div>
     </section>
   </div>
 
   <footer>
     資料來源:Open-Meteo(預報模型資料,僅供參考)<br>
-    降雨機率為當日最大值,時雨量為單一小時降雨量(mm),溫度單位為攝氏(°C)
+    降雨機率為當日最大值,時雨量為單一小時降雨量(mm),溫度皆為體感溫度,單位為攝氏(°C)
   </footer>
 </div>
 
@@ -238,8 +238,8 @@
     + "?latitude=" + LAT
     + "&longitude=" + LON
     + "&current=temperature_2m,weather_code"
-    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-    + "&hourly=temperature_2m,apparent_temperature,precipitation"
+    + "&daily=weather_code,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max"
+    + "&hourly=apparent_temperature,precipitation"
     + "&timezone=Asia%2FTaipei"
     + "&forecast_days=6";
 
@@ -248,12 +248,8 @@
   var LAST_DAY = 6; // 不含
   var todayKey = "";
   // 下方逐時圖只標示低於 LOW_LIMIT 或高於 HIGH_LIMIT 的溫度
-  var LOW_LIMIT = 21;
+  var LOW_LIMIT = 23;
   var HIGH_LIMIT = 28;
-  // 下方逐時圖的體感溫度,只標示低於 FEEL_LOW_LIMIT 或高於 FEEL_HIGH_LIMIT 的數字
-  var FEEL_LOW_LIMIT = 23;
-  var FEEL_HIGH_LIMIT = 28;
-  function feelFlag(v) { return v < FEEL_LOW_LIMIT || v > FEEL_HIGH_LIMIT; }
   // 時雨量超過此值(mm)才標示數字
   var RAIN_LIMIT = 1;
 
@@ -337,8 +333,8 @@
       list.push({
         date: daily.time[i],
         code: daily.weather_code[i],
-        max: daily.temperature_2m_max[i],
-        min: daily.temperature_2m_min[i],
+        max: daily.apparent_temperature_max[i],
+        min: daily.apparent_temperature_min[i],
         rain: daily.precipitation_probability_max[i]
       });
     }
@@ -363,7 +359,7 @@
     var P1 = [34, 200];   // 溫度
     var P2 = [262, 352];  // 降雨機率
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天溫度與降雨機率圖表" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天體感溫度與降雨機率圖表" });
 
     function xAt(i) {
       if (n === 1) return W / 2;
@@ -458,7 +454,7 @@
   function renderHourly(data) {
     hourlyEl.innerHTML = "";
     var h = data.hourly;
-    if (!h || !h.time || !h.temperature_2m) return;
+    if (!h || !h.time || !h.apparent_temperature) return;
 
     var curTime = (data.current && data.current.time) ? data.current.time : h.time[0];
     var idx = h.time.indexOf(curTime.slice(0, 13) + ":00");
@@ -467,7 +463,7 @@
     var pts = [];
     var nowI = -1;
     for (var j = idx % 3; j <= idx + 72 && j < h.time.length; j += 3) {
-      if (h.temperature_2m[j] === null || h.temperature_2m[j] === undefined) continue;
+      if (h.apparent_temperature[j] === null || h.apparent_temperature[j] === undefined) continue;
       if (j === idx) nowI = pts.length;
       // 時雨量:取該點前 3 小時內最大的單一小時降雨量
       var rmm = 0;
@@ -477,8 +473,7 @@
           if (pv !== null && pv !== undefined && pv > rmm) rmm = pv;
         }
       }
-      var feel = h.apparent_temperature ? h.apparent_temperature[j] : null;
-      pts.push({ time: h.time[j], temp: h.temperature_2m[j], feel: (feel === undefined ? null : feel), mm: rmm });
+      pts.push({ time: h.time[j], temp: h.apparent_temperature[j], mm: rmm });
     }
     if (pts.length === 0) return;
 
@@ -486,16 +481,12 @@
     var padL = 40, padR = 30, padT = 30, padB = 46;
     var tempBottom = 190;           // 溫度面板下緣
     var rainTop = 222, rainBottom = 276; // 時雨量面板
-    var temps = [];
-    pts.forEach(function (p) {
-      temps.push(p.temp);
-      if (p.feel !== null) temps.push(p.feel);
-    });
+    var temps = pts.map(function (p) { return p.temp; });
     var lo = Math.floor(Math.min.apply(null, temps) - 1);
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時溫度與時雨量圖" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時體感溫度與時雨量圖" });
     svg.style.minWidth = Math.round(W * 0.9) + "px";
 
     function xAt(i) {
@@ -548,22 +539,6 @@
       nt.textContent = "現在";
       svg.appendChild(nt);
     }
-
-    // ---- 體感溫度:紫色虛線,只標示高於/低於門檻的點 ----
-    var feelPts = [];
-    pts.forEach(function (p, i) { if (p.feel !== null) feelPts.push({ i: i, v: p.feel }); });
-    if (feelPts.length > 1) {
-      var fl = feelPts.map(function (q) { return xAt(q.i) + "," + yAt(q.v); }).join(" ");
-      svg.appendChild(svgEl("polyline", { "class": "line-feel", points: fl }));
-    }
-    pts.forEach(function (p, i) {
-      if (p.feel === null || !feelFlag(p.feel)) return;
-      // 體感高於實際溫度時數字放上方,否則放下方,盡量避開實際溫度的數字
-      var up = p.feel >= p.temp;
-      var ft = svgEl("text", { "class": "val-feel", x: xAt(i), y: yAt(p.feel) + (up ? -10 : 20), "text-anchor": "middle" });
-      ft.textContent = fmtTemp(p.feel);
-      svg.appendChild(ft);
-    });
 
     // ---- 時雨量面板 ----
     var rainMax = Math.max(2, Math.ceil(Math.max.apply(null, pts.map(function (p) { return p.mm; }))));
