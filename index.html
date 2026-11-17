@@ -121,6 +121,7 @@
   svg.chart .dot-cold { fill: var(--cold); }
   svg.chart .dot-mid { fill: var(--mid); }
   svg.chart .line-feel { stroke: var(--feel); fill: none; stroke-width: 2; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .dot-feel { fill: var(--feel); }
   svg.chart text.val-feel { fill: var(--feel); font-weight: 600; }
   .legend .t::before { background: linear-gradient(90deg, var(--cold), var(--mid), var(--hot)); }
   .legend .f::before { background: var(--feel); }
@@ -207,11 +208,12 @@
 
   <div id="content" class="hidden">
     <section class="card">
-      <h2 class="section-title">今天與未來五天溫度與降雨機率</h2>
+      <h2 class="section-title">今天與未來五天溫度、體感溫度與降雨機率</h2>
       <div class="chart-wrap" id="chart"></div>
       <div class="legend">
         <span class="h">最高溫</span>
         <span class="l">最低溫</span>
+        <span class="f">體感溫度(虛線)</span>
         <span class="p">降雨機率</span>
       </div>
     </section>
@@ -237,7 +239,7 @@
     + "?latitude=" + LAT
     + "&longitude=" + LON
     + "&current=temperature_2m,weather_code"
-    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max"
     + "&hourly=temperature_2m,apparent_temperature,precipitation"
     + "&timezone=Asia%2FTaipei"
     + "&forecast_days=6";
@@ -334,6 +336,8 @@
         code: daily.weather_code[i],
         max: daily.temperature_2m_max[i],
         min: daily.temperature_2m_min[i],
+        feelMax: daily.apparent_temperature_max ? daily.apparent_temperature_max[i] : null,
+        feelMin: daily.apparent_temperature_min ? daily.apparent_temperature_min[i] : null,
         rain: daily.precipitation_probability_max[i]
       });
     }
@@ -358,7 +362,7 @@
     var P1 = [34, 200];   // 溫度
     var P2 = [262, 352];  // 降雨機率
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天溫度與降雨機率圖表" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天與未來五天溫度、體感溫度與降雨機率圖表" });
 
     function xAt(i) {
       if (n === 1) return W / 2;
@@ -386,8 +390,14 @@
     // ---- 面板 1:溫度 ----
     var maxes = days.map(function (d) { return d.max; });
     var mins = days.map(function (d) { return d.min; });
-    var tLo = Math.floor(Math.min.apply(null, mins) - 2);
-    var tHi = Math.ceil(Math.max.apply(null, maxes) + 2);
+    var feelMaxes = days.map(function (d) { return d.feelMax; });
+    var feelMins = days.map(function (d) { return d.feelMin; });
+    var hasFeel = feelMaxes.every(function (v) { return v !== null && v !== undefined; })
+      && feelMins.every(function (v) { return v !== null && v !== undefined; });
+    var loAll = hasFeel ? mins.concat(feelMins) : mins;
+    var hiAll = hasFeel ? maxes.concat(feelMaxes) : maxes;
+    var tLo = Math.floor(Math.min.apply(null, loAll) - 2);
+    var tHi = Math.ceil(Math.max.apply(null, hiAll) + 2);
     if (tHi === tLo) tHi = tLo + 1;
     var yT = scale(P1, tLo, tHi);
     title("溫度 (°C)", 16);
@@ -399,6 +409,10 @@
     }
     polyline(maxes, yT, "line-hot");
     polyline(mins, yT, "line-cold");
+    if (hasFeel) {
+      polyline(feelMaxes, yT, "line-feel");
+      polyline(feelMins, yT, "line-feel");
+    }
 
     days.forEach(function (d, i) {
       var x = xAt(i);
@@ -410,6 +424,21 @@
       var tl = svgEl("text", { "class": "val-cold", x: x, y: yT(d.min) + 20, "text-anchor": "middle" });
       tl.textContent = fmtTemp(d.min);
       svg.appendChild(tl);
+
+      // 體感溫度(最高/最低):數字放在遠離實際溫度標示的一側,避免重疊
+      if (hasFeel) {
+        var fmY = yT(d.feelMax), fnY = yT(d.feelMin);
+        svg.appendChild(svgEl("circle", { "class": "dot-feel", cx: x, cy: fmY, r: 3.5 }));
+        svg.appendChild(svgEl("circle", { "class": "dot-feel", cx: x, cy: fnY, r: 3.5 }));
+        var fmUp = d.feelMax >= d.max;
+        var fmt = svgEl("text", { "class": "val-feel", x: x, y: fmUp ? fmY - 10 : fmY + 16, "text-anchor": "middle" });
+        fmt.textContent = fmtTemp(d.feelMax);
+        svg.appendChild(fmt);
+        var fnDown = d.feelMin <= d.min;
+        var fnt = svgEl("text", { "class": "val-feel", x: x, y: fnDown ? fnY + 20 : fnY - 8, "text-anchor": "middle" });
+        fnt.textContent = fmtTemp(d.feelMin);
+        svg.appendChild(fnt);
+      }
     });
 
     // ---- 面板 2:降雨機率 ----
