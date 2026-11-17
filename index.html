@@ -237,9 +237,9 @@
     </section>
 
     <section class="card">
-      <h2 class="section-title">今天至未來 3 天體感溫度與時雨量(每 3 小時)</h2>
+      <h2 class="section-title">今天至未來 3 天體感溫度、實際溫度與時雨量(每 3 小時)</h2>
       <div class="chart-wrap" id="hourly"></div>
-      <div class="legend"><span class="t">體感溫度</span><span class="m">時雨量</span></div>
+      <div class="legend"><span class="t">體感溫度</span><span class="f">實際溫度(虛線)</span><span class="m">時雨量</span></div>
     </section>
   </div>
 
@@ -272,7 +272,7 @@
       + "&longitude=" + pl.lon
       + "&current=temperature_2m,weather_code"
       + "&daily=weather_code,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max"
-      + "&hourly=apparent_temperature,precipitation"
+      + "&hourly=temperature_2m,apparent_temperature,precipitation"
       + "&timezone=Asia%2FTaipei"
       + "&forecast_days=6";
   }
@@ -509,7 +509,8 @@
           if (pv !== null && pv !== undefined && pv > rmm) rmm = pv;
         }
       }
-      pts.push({ time: h.time[j], temp: h.apparent_temperature[j], mm: rmm });
+      var real = h.temperature_2m ? h.temperature_2m[j] : null;
+      pts.push({ time: h.time[j], temp: h.apparent_temperature[j], real: (real === undefined ? null : real), mm: rmm });
     }
     if (pts.length === 0) return;
 
@@ -517,12 +518,16 @@
     var padL = 40, padR = 30, padT = 30, padB = 46;
     var tempBottom = 190;           // 溫度面板下緣
     var rainTop = 222, rainBottom = 276; // 時雨量面板
-    var temps = pts.map(function (p) { return p.temp; });
+    var temps = [];
+    pts.forEach(function (p) {
+      temps.push(p.temp);
+      if (p.real !== null) temps.push(p.real);
+    });
     var lo = Math.floor(Math.min.apply(null, temps) - 1);
     var hi = Math.ceil(Math.max.apply(null, temps) + 1);
     if (hi <= lo) hi = lo + 1;
 
-    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時體感溫度與時雨量圖" });
+    var svg = svgEl("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "今天至未來 3 天每 3 小時體感溫度、實際溫度與時雨量圖" });
     svg.style.minWidth = Math.round(W * 0.9) + "px";
 
     function xAt(i) {
@@ -602,6 +607,13 @@
       var nt = svgEl("text", { x: nx, y: padT - 16, "text-anchor": "middle" });
       nt.textContent = "現在";
       svg.appendChild(nt);
+    }
+
+    // ---- 實際溫度:紫色虛線(不標示數字) ----
+    var realPts = [];
+    pts.forEach(function (p, i) { if (p.real !== null) realPts.push(xAt(i) + "," + yAt(p.real)); });
+    if (realPts.length > 1) {
+      svg.appendChild(svgEl("polyline", { "class": "line-feel", points: realPts.join(" ") }));
     }
 
     // ---- 時雨量面板 ----
