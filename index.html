@@ -65,6 +65,18 @@
   }
   h1 { font-size: 1.5rem; margin: 0; }
   .subtitle { color: var(--sub); font-size: 0.88rem; margin-top: 4px; }
+  .ctrl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select#placeSel {
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 9px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  select#placeSel:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   button.refresh {
     font: inherit;
     font-size: 0.95rem;
@@ -196,10 +208,13 @@
 <div class="wrap">
   <header>
     <div>
-      <h1>高雄市小港區天氣預報</h1>
+      <h1 id="pageTitle">高雄市小港區天氣預報</h1>
       <div class="subtitle" id="updated">載入中…</div>
     </div>
-    <button class="refresh" id="refreshBtn" type="button">重新整理</button>
+    <div class="ctrl">
+      <select id="placeSel" aria-label="選擇地區"></select>
+      <button class="refresh" id="refreshBtn" type="button">重新整理</button>
+    </div>
   </header>
 
   <div id="status" class="card msg">
@@ -234,16 +249,30 @@
 
 <script>
 (function () {
-  var LAT = 22.5660;
-  var LON = 120.3450;
-  var API = "https://api.open-meteo.com/v1/forecast"
-    + "?latitude=" + LAT
-    + "&longitude=" + LON
-    + "&current=temperature_2m,weather_code"
-    + "&daily=weather_code,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max"
-    + "&hourly=apparent_temperature,precipitation"
-    + "&timezone=Asia%2FTaipei"
-    + "&forecast_days=6";
+  // 可選擇的地區(座標為各區域大致中心)
+  var PLACES = [
+    { id: "xiaogang", name: "高雄市小港區", lat: 22.5660, lon: 120.3450 },
+    { id: "chaozhou", name: "屏東縣潮州鎮", lat: 22.5503, lon: 120.5428 }
+  ];
+  var PLACE_KEY = "kh-weather-place";
+  var place = PLACES[0];
+  try {
+    var savedId = localStorage.getItem(PLACE_KEY);
+    for (var pi = 0; pi < PLACES.length; pi++) {
+      if (PLACES[pi].id === savedId) place = PLACES[pi];
+    }
+  } catch (e) {}
+
+  function buildApi(pl) {
+    return "https://api.open-meteo.com/v1/forecast"
+      + "?latitude=" + pl.lat
+      + "&longitude=" + pl.lon
+      + "&current=temperature_2m,weather_code"
+      + "&daily=weather_code,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max"
+      + "&hourly=apparent_temperature,precipitation"
+      + "&timezone=Asia%2FTaipei"
+      + "&forecast_days=6";
+  }
 
   // 資料含今天(索引0)與未來五天。上方圖表顯示全部 6 天。
   var FIRST_DAY = 0;
@@ -262,6 +291,8 @@
   var chartEl = document.getElementById("chart");
   var hourlyEl = document.getElementById("hourly");
   var updatedEl = document.getElementById("updated");
+  var titleEl = document.getElementById("pageTitle");
+  var placeSel = document.getElementById("placeSel");
   var btn = document.getElementById("refreshBtn");
 
   function weatherInfo(code) {
@@ -615,15 +646,14 @@
     btn.disabled = false;
   }
 
-  var CACHE_KEY = "kh-weather-cache-v1";
   var TIMEOUTS = [15000, 20000, 25000]; // 每次嘗試的逾時時間,最多重試 3 次
-  var loading = false;
+  var seq = 0;    // 每次載入遞增,切換地區時用來丟棄舊請求的結果
   var lastOk = 0; // 上次成功取得資料的時間
 
-  function fetchOnce(timeoutMs) {
+  function fetchOnce(url, timeoutMs) {
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
     var timer = setTimeout(function () { if (controller) controller.abort(); }, timeoutMs);
-    return fetch(API, controller ? { signal: controller.signal } : undefined)
+    return fetch(url, controller ? { signal: controller.signal } : undefined)
       .then(function (res) {
         if (!res.ok) throw new Error("伺服器回應錯誤(狀態碼 " + res.status + ")");
         return res.json();
@@ -641,40 +671,51 @@
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
-  function saveCache(data) {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: data })); } catch (e) {}
+  function cacheKey(pl) { return "kh-weather-cache-v2-" + pl.id; }
+
+  function saveCache(pl, data) {
+    try { localStorage.setItem(cacheKey(pl), JSON.stringify({ t: Date.now(), data: data })); } catch (e) {}
   }
 
-  function readCache() {
+  function readCache(pl) {
     try {
-      var raw = localStorage.getItem(CACHE_KEY);
+      var raw = localStorage.getItem(cacheKey(pl));
       if (!raw) return null;
       var obj = JSON.parse(raw);
       return (obj && obj.data && obj.t) ? obj : null;
     } catch (e) { return null; }
   }
 
-  function tryFetch(attempt, lastErr) {
+  function tryFetch(url, attempt, lastErr, my) {
+    if (my !== seq) return Promise.reject({ stale: true });
     if (attempt >= TIMEOUTS.length) return Promise.reject(lastErr);
-    return fetchOnce(TIMEOUTS[attempt]).catch(function (err) {
-      return wait(1000).then(function () { return tryFetch(attempt + 1, err); });
+    return fetchOnce(url, TIMEOUTS[attempt]).catch(function (err) {
+      return wait(1000).then(function () { return tryFetch(url, attempt + 1, err, my); });
     });
   }
 
+  function setTitle() {
+    var t = place.name + "天氣預報";
+    titleEl.textContent = t;
+    document.title = t;
+  }
+
   function load() {
-    if (loading) return;
-    loading = true;
+    var my = ++seq;
+    var pl = place;
     showLoading();
 
-    tryFetch(0, null)
+    tryFetch(buildApi(pl), 0, null, my)
       .then(function (data) {
-        saveCache(data);
+        if (my !== seq) return;
+        saveCache(pl, data);
         lastOk = Date.now();
         render(data);
       })
       .catch(function (err) {
+        if (my !== seq || (err && err.stale)) return;
         var msg = (err && err.name === "AbortError") ? "連線逾時。" : (err && err.message ? err.message : "發生未知錯誤。");
-        var cached = readCache();
+        var cached = readCache(pl);
         if (cached) {
           // 網路不穩時,先顯示上次成功取得的資料
           render(cached.data);
@@ -687,10 +728,28 @@
         }
       })
       .then(function () {
-        loading = false;
-        btn.disabled = false;
+        if (my === seq) btn.disabled = false;
       });
   }
+
+  // 地區選單
+  PLACES.forEach(function (pl) {
+    var o = document.createElement("option");
+    o.value = pl.id;
+    o.textContent = pl.name;
+    if (pl.id === place.id) o.selected = true;
+    placeSel.appendChild(o);
+  });
+  placeSel.addEventListener("change", function () {
+    for (var i = 0; i < PLACES.length; i++) {
+      if (PLACES[i].id === placeSel.value) place = PLACES[i];
+    }
+    try { localStorage.setItem(PLACE_KEY, place.id); } catch (e) {}
+    lastOk = 0;
+    setTitle();
+    load();
+  });
+  setTitle();
 
   btn.addEventListener("click", load);
 
