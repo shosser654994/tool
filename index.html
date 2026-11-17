@@ -679,7 +679,8 @@
     btn.disabled = false;
   }
 
-  var TIMEOUTS = [15000, 20000, 25000]; // 每次嘗試的逾時時間,最多重試 3 次
+  var TIMEOUTS = [6000, 10000, 15000, 20000]; // 第一次 6 秒就重試,之後逐次加長
+  var INSTANT_MAX_AGE = 6 * 60 * 60 * 1000;   // 舊資料在 6 小時內才會先顯示
   var seq = 0;    // 每次載入遞增,切換地區時用來丟棄舊請求的結果
   var lastOk = 0; // 上次成功取得資料的時間
 
@@ -733,10 +734,28 @@
     document.title = t;
   }
 
+  function cacheTimeText(t) {
+    var d = new Date(t);
+    var hh = ("0" + d.getHours()).slice(-2);
+    var mm = ("0" + d.getMinutes()).slice(-2);
+    return (d.getMonth() + 1) + "/" + d.getDate() + " " + hh + ":" + mm;
+  }
+
   function load() {
     var my = ++seq;
     var pl = place;
-    showLoading();
+    var cached = readCache(pl);
+    var shownCached = false;
+
+    if (cached && Date.now() - cached.t < INSTANT_MAX_AGE) {
+      // 先立刻顯示上次存的資料,背景再更新
+      render(cached.data);
+      updatedEl.textContent = "先顯示 " + cacheTimeText(cached.t) + " 的資料,更新中…";
+      btn.disabled = true;
+      shownCached = true;
+    } else {
+      showLoading();
+    }
 
     tryFetch(buildApi(pl), 0, null, my)
       .then(function (data) {
@@ -748,14 +767,12 @@
       .catch(function (err) {
         if (my !== seq || (err && err.stale)) return;
         var msg = (err && err.name === "AbortError") ? "連線逾時。" : (err && err.message ? err.message : "發生未知錯誤。");
-        var cached = readCache(pl);
-        if (cached) {
-          // 網路不穩時,先顯示上次成功取得的資料
+        if (shownCached) {
+          updatedEl.textContent = "連線失敗,顯示 " + cacheTimeText(cached.t) + " 的舊資料";
+        } else if (cached) {
+          // 舊資料超過 6 小時,仍比空白好,但註明時間
           render(cached.data);
-          var d = new Date(cached.t);
-          var hh = ("0" + d.getHours()).slice(-2);
-          var mm = ("0" + d.getMinutes()).slice(-2);
-          updatedEl.textContent = "連線失敗,顯示 " + (d.getMonth() + 1) + "/" + d.getDate() + " " + hh + ":" + mm + " 的舊資料";
+          updatedEl.textContent = "連線失敗,顯示 " + cacheTimeText(cached.t) + " 的舊資料";
         } else {
           showError(msg);
         }
